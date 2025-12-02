@@ -25,6 +25,10 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
+// Enable serving default files (like index.html) and static files from wwwroot
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.UseHttpsRedirection();
 
 app.UseAuthorization();
