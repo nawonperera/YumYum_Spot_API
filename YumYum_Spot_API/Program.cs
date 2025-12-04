@@ -1,6 +1,9 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.OpenApi;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi.Models;
 using Scalar.AspNetCore;
 using YumYum_Spot_API.Data;
 using YumYum_Spot_API.Models;
@@ -15,6 +18,10 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 });
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>().AddEntityFrameworkStores<ApplicationDbContext>();
 builder.Services.AddControllers();
+
+/*========================================
+ =      Athuentication Configuration     =
+ =========================================*/
 
 // Get the JWT secret key from appsettings.json (ApiSettings:Secret). This is the key used to sign and validate JWT tokens.
 var key = builder.Configuration.GetValue<string>("ApiSettings:Secret");
@@ -47,7 +54,7 @@ builder.Services.AddAuthentication(options =>
 });
 
 
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options => options.AddDocumentTransformer<BearerSecuritySchemeTransformer>());
 
 var app = builder.Build();
 
@@ -70,3 +77,55 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+
+
+
+// This class customizes the OpenAPI documentation to include Bearer (JWT) authentication details.
+internal sealed class BearerSecuritySchemeTransformer(IAuthenticationSchemeProvider authenticationSchemeProvider)
+    : IOpenApiDocumentTransformer
+// internal -> this class can be used only inside the same project
+// sealed   -> no other class can inherit from this class
+{
+    public async Task TransformAsync(OpenApiDocument document, OpenApiDocumentTransformerContext context,
+        CancellationToken cancellationToken)
+    {
+        // Get all registered authentication schemes in the application.
+        // "authentication schemes" means all the auth methods your app supports
+        // Example: Bearer, Cookies, OAuth, Microsoft, Google etc.
+        var authnticationSchemes = await authenticationSchemeProvider.GetAllSchemesAsync();
+
+        // Check if the "Bearer" authentication is configured in the app.
+        // JwtBearerDefaults.AuthenticationScheme = "Bearer"
+        if (authnticationSchemes.Any(authScheme => authScheme.Name == JwtBearerDefaults.AuthenticationScheme))
+        {
+            // Create the security scheme requirement for Bearer (JWT) authentication.
+            var requirement = new Dictionary<string, OpenApiSecurityScheme>
+            {
+                // Key: scheme name ("Bearer")
+                // Value: configuration of the Bearer security type in Swagger
+                [JwtBearerDefaults.AuthenticationScheme] = new OpenApiSecurityScheme
+                {
+                    Type = SecuritySchemeType.Http,   // using HTTP-based security
+                    Scheme = "bearer",                // type is Bearer token
+                    In = ParameterLocation.Header,    // token should be sent in the HTTP header
+                    BearerFormat = "JWT",             // token format is JWT
+                }
+            };
+
+            // Initialize Components if it is null.
+            // ??= means: "if document.Components is null, assign a new OpenApiComponents()"
+            document.Components ??= new OpenApiComponents();
+            // Add the Bearer security scheme to Swagger.
+            document.Components.SecuritySchemes = requirement;
+        }
+
+        // Set the general Swagger document information.
+        document.Info = new()
+        {
+            Title = "YumYum Spot API",                      // Swagger title
+            Version = "v1",                                 // API version
+            Description = "API for YumYum Spot Restaurant Application", // simple API description
+        };
+    }
+}
